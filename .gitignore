@@ -1,0 +1,35 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+.venv/
+venv/
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local artefacts: never commit key material or ciphertexts
+*.pem
+*.key
+ek.bin
+dk.bin
+pk.bin
+sk.bin
+ct.bin
+ss.bin
+sig.bin
+*.bin
+!tests/**/*.bin

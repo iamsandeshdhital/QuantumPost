@@ -1,12 +1,19 @@
 """Dependency-free Keccak-f[1600] and SHA-3/SHAKE reference implementation.
 
-This module exists for two reasons:
+This module exists so that :mod:`quantumpost` never *requires* an accelerated
+backend: :mod:`quantumpost.hashes` falls back to it whenever the interpreter's
+:mod:`hashlib` does not expose SHAKE (CPython gained SHAKE in 3.6, so in
+practice this path is dead code on any supported interpreter).
 
-1. **Portability** - it is used automatically by :mod:`quantumpost.hashes` when
-   the interpreter's :mod:`hashlib` has no accelerated SHAKE.
-2. **Verification** - the test-suite cross-checks this implementation against
-   the platform's OpenSSL backend, which catches subtle mistakes in the sponge
-   padding, the byte-order convention of the state and the rate handling.
+.. warning::
+
+   The accelerated backend is the **only** path exercised by the ML-KEM and
+   ML-DSA code paths, and it is the path validated against the NIST ACVP
+   vectors.  This fallback is a portability net, not a validated second
+   implementation: it is covered by structural tests (the permutation is a
+   bijection, the sponge is deterministic and prefix-consistent) but it is
+   **not** cross-checked against an authoritative digest source, so deployers
+   who must rely on it should validate it against FIPS 202 test vectors first.
 
 The implementation follows FIPS 202 directly and is deliberately written for
 auditability rather than speed.
@@ -113,10 +120,11 @@ def sponge(data: bytes, rate: int, suffix: bytes, out_len: int) -> bytes:
     state = [[0] * 5 for _ in range(5)]
     block = rate // 8
 
-    # pad10*1 with the domain separation suffix
-    padded = data + b"\x06" + suffix + b"\x80"
-    # pad10*1 is only valid while padding fits in one extra block
-    if len(padded) % block != 0:
+    # pad10*1 with the caller's domain separation suffix (0x06 for SHA-3,
+    # 0x1f for SHAKE).  The suffix is inserted exactly once, so it is the
+    # caller's responsibility to pass it.
+    padded = data + suffix + b"\x80"
+    if len(padded) % block:
         padded += b"\x00" * (block - len(padded) % block)
 
     for offset in range(0, len(padded), block):

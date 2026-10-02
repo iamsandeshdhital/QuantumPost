@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (python ${{ matrix.python-version }} on ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        exclude:
+          - os: macos-latest
+            python-version: "3.9"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Show environment
+        run: python -VV
+
+      - name: Confirm there are no runtime dependencies
+        run: |
+          python - <<'PY'
+          import ast, pathlib, sys
+          allowed = {
+              "hashlib", "hmac", "math", "os", "random", "sys", "typing",
+              "argparse", "binascii", "json", "dataclasses", "__future__",
+              "quantumpost",
+          }
+          bad = set()
+          for path in pathlib.Path("quantumpost").glob("*.py"):
+              tree = ast.parse(path.read_text(encoding="utf-8"))
+              for node in ast.walk(tree):
+                  if isinstance(node, ast.Import):
+                      bad.update(a.name.split(".")[0] for a in node.names)
+                  elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                      bad.add(node.module.split(".")[0])
+          unexpected = sorted(bad - allowed)
+          if unexpected:
+              sys.exit(f"unexpected imports: {unexpected}")
+          print("no third-party imports found")
+          PY
+
+      - name: Built-in self test
+        run: python -m quantumpost self-test
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: CLI smoke test
+        run: |
+          python -m quantumpost --version
+          python -m quantumpost list
+          python -m quantumpost info ML-KEM-768
+          python -m quantumpost hybrid-demo
+          python -m quantumpost bench
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile every module
+        run: python -m compileall -q quantumpost tests tools
+      - name: Ruff (advisory)
+        continue-on-error: true
+        run: |
+          python -m pip install --upgrade ruff
+          ruff check quantumpost tests tools
+
+  conformance:
+    name: ACVP conformance (opt-in)
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check against NIST ACVP vectors
+        run: |
+          if [ -z "${ACVP_DIR:-}" ]; then
+            echo "ACVP_DIR is not set; fetch the NIST vectors into it to enable this job"
+            exit 0
+          fi
+          ACVP_DIR="${ACVP_DIR}" python tools/check_acvp.py

@@ -144,8 +144,13 @@ class MLDSAParams:
     d: int = 13
 
     @property
+    def eta_bits(self) -> int:
+        """Bit width of a packed ``s1``/``s2`` coefficient (``bitlen(2*eta)``)."""
+        return _bitlen(2 * self.eta)
+
+    @property
     def t1_bits(self) -> int:
-        """Bit width of the packed high part ``t1`` (10 bits: ``t1 < 2^10``)."""
+        """Bit width of the packed ``t1`` (10 bits, from ``Power2Round``)."""
         return 10
 
     @property
@@ -167,17 +172,21 @@ class MLDSAParams:
     def sk_len(self) -> int:
         """Private key length in bytes.
 
-        Layout: ``rho || key || tr`` (128 bytes), then the coefficient-domain
-        ``s1`` and ``s2`` each packed at ``eta`` bits, then ``t0`` packed at
-        ``d`` bits.  Each polynomial field is byte aligned independently, so
-        this value is derived from the same packing widths the encoder uses and
-        is guaranteed to match what :mod:`quantumpost.mldsa` emits.
+        Layout is ``rho || key || tr`` (128 bytes), then the coefficient-domain
+        ``s1`` (``ell`` polys at :attr:`eta_bits`), ``s2`` (``k`` polys at
+        :attr:`eta_bits`) and ``t0`` (``k`` polys at ``d`` bits).  Each field is
+        byte aligned independently, so this is derived from exactly the widths
+        :mod:`quantumpost.mldsa` encodes with, and reproduces FIPS 204 Table 1
+        (2560 / 4032 / 4896).
         """
-        return 128 + self.k * self._packed(self.eta) * 2 + self.k * self._packed(self.d)
+        return (
+            128
+            + self.ell * self._packed(self.eta_bits)
+            + self.k * self._packed(self.eta_bits)
+            + self.k * self._packed(self.d)
+        )
 
-    #: Private key sizes published in FIPS 204 Table 1, kept for cross-checking.
-    #: ``quantumpost.mldsa`` currently uses the self-consistent layout derived
-    #: from :attr:`sk_len`, so these are reported rather than enforced.
+    #: Private key sizes published in FIPS 204 Table 1, asserted by the tests.
     FIPS204_SK_SIZES = {"ML-DSA-44": 2560, "ML-DSA-65": 4032, "ML-DSA-87": 4896}
 
     @staticmethod
@@ -221,6 +230,7 @@ class MLDSAParams:
             "k": self.k,
             "ell": self.ell,
             "eta": self.eta,
+            "eta_bits": self.eta_bits,
             "beta": self.beta,
             "omega": self.omega,
             "pk_len": self.pk_len,
@@ -233,7 +243,7 @@ class MLDSAParams:
 MLDSA_PARAMS: dict[str, MLDSAParams] = {
     p.name: p
     for p in (
-        MLDSAParams("ML-DSA-44", 2, tau=39, lam=128, gamma1=2 ** 17, gamma2=(8380417 - 1) // 32,
+        MLDSAParams("ML-DSA-44", 2, tau=39, lam=128, gamma1=2 ** 17, gamma2=(8380417 - 1) // 88,
                     k=4, ell=4, eta=2, beta=78, omega=80),
         MLDSAParams("ML-DSA-65", 3, tau=49, lam=192, gamma1=2 ** 19, gamma2=(8380417 - 1) // 32,
                     k=6, ell=5, eta=4, beta=196, omega=55),

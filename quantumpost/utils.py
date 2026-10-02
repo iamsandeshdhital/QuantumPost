@@ -230,7 +230,12 @@ def bitpack(w: int, coeffs: Sequence[int]) -> bytes:
 
 
 def bitunpack(data: bytes, w: int, count: int, alpha: int) -> list[int]:
-    """FIPS 204 :math:`\\operatorname{BitUnpack}(v, \\alpha, w)`."""
+    """FIPS 204 :math:`\\operatorname{BitUnpack}(v, \\alpha, w)`.
+
+    Each coefficient is read as a ``w``-bit little-endian limb ``t`` and mapped
+    to the signed representative of ``t - alpha``; the modular reduction is what
+    lets callers pass ``alpha = 0`` to obtain the raw unsigned limb.
+    """
     values: list[int] = []
     bit_index = 0
     for _ in range(count):
@@ -240,7 +245,7 @@ def bitunpack(data: bytes, w: int, count: int, alpha: int) -> list[int]:
             bit = (data[byte_index] >> ((bit_index + i) % 8)) & 1
             value |= bit << i
         bit_index += w
-        values.append((alpha - value) % (1 << w))
+        values.append((value - alpha) % (1 << w))
     return values
 
 
